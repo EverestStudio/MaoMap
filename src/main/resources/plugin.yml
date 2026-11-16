@@ -8,6 +8,7 @@ commands:
   maomap:
     description: MaoMap administration commands
     usage: /maomap status
+    aliases: [squaremap]
     permission: maomap.admin
 permissions:
   maomap.admin:
