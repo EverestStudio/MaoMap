@@ -32,7 +32,8 @@ public final class ChunkCaptureService implements Listener {
     }
 
     @EventHandler public void onChunkLoad(ChunkLoadEvent event) {
-        if (event.isNewChunk()) enqueue(event.getChunk());
+        // Existing chunks must also be mapped when they enter the server's loaded set.
+        enqueue(event.getChunk());
     }
 
     @EventHandler(ignoreCancelled = true) public void onBlockPlace(BlockPlaceEvent event) {
@@ -44,8 +45,10 @@ public final class ChunkCaptureService implements Listener {
     }
 
     public void enqueue(Chunk chunk) {
-        if (stopped || pending.size() >= maxQueue) return;
-        pending.add(new ChunkKey(chunk.getWorld().getUID(), chunk.getX(), chunk.getZ()));
+        if (stopped) return;
+        ChunkKey key = new ChunkKey(chunk.getWorld().getUID(), chunk.getX(), chunk.getZ());
+        if (pending.contains(key) || pending.size() >= maxQueue) return;
+        pending.add(key);
     }
 
     /** Must be called on the server thread. */
