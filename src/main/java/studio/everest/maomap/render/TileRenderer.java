@@ -218,14 +218,14 @@ public final class TileRenderer {
         String biome = biomeName.toUpperCase(Locale.ROOT);
 
         if (material.contains("LAVA")) return new Color(220, 83, 25);
-        if (material.contains("WATER") || biome.contains("OCEAN") || biome.contains("RIVER")) {
-            if (biome.contains("FROZEN") || material.contains("ICE")) return new Color(166, 205, 218);
+        if (material.contains("WATER")) {
+            if (biome.contains("FROZEN")) return new Color(166, 205, 218);
             if (biome.contains("WARM") || biome.contains("LUKEWARM")) return new Color(65, 157, 164);
             if (biome.contains("COLD") || biome.contains("DEEP")) return new Color(48, 91, 145);
             return new Color(57, 119, 166);
         }
         if (material.contains("ICE") || biome.contains("SNOWY") || biome.contains("FROZEN")
-                || biome.contains("GROVE") || biome.contains("PEAKS")) return new Color(218, 225, 224);
+                || biome.contains("PEAKS")) return new Color(218, 225, 224);
         if (biome.contains("DESERT") || biome.contains("BADLANDS") || biome.contains("SAVANNA")) {
             if (material.contains("TERRACOTTA") || biome.contains("BADLANDS")) {
                 return new Color(184, 111, 65);
