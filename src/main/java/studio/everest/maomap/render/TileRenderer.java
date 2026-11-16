@@ -29,7 +29,7 @@ public final class TileRenderer {
     private static final int CHUNKS_PER_TILE = 16;
     private static final int TILE_SIZE = 256;
     private static final int DATA_MAGIC = 0x4D414F31; // MAO1
-    private static final int DATA_VERSION = 1;
+    private static final int DATA_VERSION = 2;
 
     private final Path output;
     private final Consumer<String> errorLogger;
@@ -62,7 +62,6 @@ public final class TileRenderer {
             AtomicReference<ChunkSnapshot> existing = pending.get(key);
             if (existing != null) {
                 synchronized (existing) {
-                    // The worker may have removed this state while we waited for its lock.
                     if (pending.get(key) != existing) continue;
                     existing.set(snapshot);
                     return true;
@@ -125,6 +124,7 @@ public final class TileRenderer {
         Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
         int[] heights = snapshot.surfaceHeights();
         String[] materials = snapshot.surfaceMaterials();
+        String[] biomes = snapshot.surfaceBiomes();
         try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(temporary))) {
             out.writeInt(DATA_MAGIC);
             out.writeInt(DATA_VERSION);
@@ -133,6 +133,7 @@ public final class TileRenderer {
             for (int i = 0; i < 256; i++) {
                 out.writeInt(heights[i]);
                 out.writeUTF(materials[i]);
+                out.writeUTF(biomes[i]);
             }
         }
         moveAtomically(temporary, target);
@@ -168,10 +169,8 @@ public final class TileRenderer {
                 double slope = ((left - right) + (up - down) * 0.65) / 18.0;
                 int shade = (int) Math.round(Math.max(-38, Math.min(38, slope)));
                 Color base = new Color(colors[index], true);
-                int red = clamp(base.getRed() + shade);
-                int green = clamp(base.getGreen() + shade);
-                int blue = clamp(base.getBlue() + shade);
-                image.setRGB(x, z, new Color(red, green, blue).getRGB());
+                image.setRGB(x, z, new Color(clamp(base.getRed() + shade),
+                        clamp(base.getGreen() + shade), clamp(base.getBlue() + shade)).getRGB());
             }
         }
 
@@ -187,15 +186,21 @@ public final class TileRenderer {
                                    int[] colors, boolean[] present) throws IOException {
         try (DataInputStream in = new DataInputStream(Files.newInputStream(file))) {
             if (in.readInt() != DATA_MAGIC) throw new IOException("Invalid chunk data header: " + file);
-            if (in.readInt() != DATA_VERSION) throw new IOException("Unsupported chunk data version: " + file);
+            int version = in.readInt();
+            if (version < 1 || version > DATA_VERSION) {
+                throw new IOException("Unsupported chunk data version " + version + ": " + file);
+            }
             in.readInt(); // minHeight, reserved for future rendering styles
             in.readUTF(); // world name
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
                     int local = z * 16 + x;
                     int target = (offsetZ + z) * TILE_SIZE + offsetX + x;
-                    heights[target] = in.readInt();
-                    colors[target] = colorFor(in.readUTF()).getRGB();
+                    int height = in.readInt();
+                    String material = in.readUTF();
+                    String biome = version >= 2 ? in.readUTF() : "PLAINS";
+                    heights[target] = height;
+                    colors[target] = colorFor(material, biome).getRGB();
                     present[target] = true;
                 }
             }
@@ -208,15 +213,46 @@ public final class TileRenderer {
         return present[index] ? heights[index] : fallback;
     }
 
-    private Color colorFor(String materialName) {
-        String name = materialName.toUpperCase(Locale.ROOT);
-        if (name.contains("WATER") || name.contains("ICE")) return new Color(55, 115, 175);
-        if (name.contains("SAND") || name.contains("SANDSTONE") || name.contains("TERRACOTTA")) return new Color(211, 190, 125);
-        if (name.contains("SNOW") || name.contains("QUARTZ") || name.contains("CALCITE")) return new Color(220, 222, 218);
-        if (name.contains("LEAVES") || name.contains("MOSS") || name.contains("GRASS")) return new Color(83, 145, 76);
-        if (name.contains("LOG") || name.contains("WOOD")) return new Color(112, 87, 57);
-        if (name.contains("STONE") || name.contains("DEEPSLATE") || name.contains("ORE")) return new Color(115, 116, 119);
-        if (name.contains("LAVA")) return new Color(220, 83, 25);
+    private Color colorFor(String materialName, String biomeName) {
+        String material = materialName.toUpperCase(Locale.ROOT);
+        String biome = biomeName.toUpperCase(Locale.ROOT);
+
+        if (material.contains("LAVA")) return new Color(220, 83, 25);
+        if (material.contains("WATER") || biome.contains("OCEAN") || biome.contains("RIVER")) {
+            if (biome.contains("FROZEN") || material.contains("ICE")) return new Color(166, 205, 218);
+            if (biome.contains("WARM") || biome.contains("LUKEWARM")) return new Color(65, 157, 164);
+            if (biome.contains("COLD") || biome.contains("DEEP")) return new Color(48, 91, 145);
+            return new Color(57, 119, 166);
+        }
+        if (material.contains("ICE") || biome.contains("SNOWY") || biome.contains("FROZEN")
+                || biome.contains("GROVE") || biome.contains("PEAKS")) return new Color(218, 225, 224);
+        if (biome.contains("DESERT") || biome.contains("BADLANDS") || biome.contains("SAVANNA")) {
+            if (material.contains("TERRACOTTA") || biome.contains("BADLANDS")) {
+                return new Color(184, 111, 65);
+            }
+            return new Color(205, 184, 119);
+        }
+        if (biome.contains("SWAMP") || biome.contains("MANGROVE")) return new Color(91, 119, 76);
+        if (biome.contains("JUNGLE") || biome.contains("BAMBOO")) return new Color(67, 133, 63);
+        if (biome.contains("TAIGA") || biome.contains("OLD_GROWTH_PINE")
+                || biome.contains("OLD_GROWTH_SPRUCE")) return new Color(76, 119, 82);
+        if (biome.contains("MUSHROOM")) return new Color(142, 119, 155);
+        if (biome.contains("MEADOW") || biome.contains("PLAINS") || biome.contains("CHERRY_GROVE")) {
+            return biome.contains("CHERRY") ? new Color(157, 137, 151) : new Color(126, 166, 100);
+        }
+        if (biome.contains("FOREST") || biome.contains("GROVE")) return new Color(83, 139, 78);
+
+        if (material.contains("SAND") || material.contains("SANDSTONE")) return new Color(211, 190, 125);
+        if (material.contains("SNOW") || material.contains("QUARTZ") || material.contains("CALCITE")) {
+            return new Color(220, 222, 218);
+        }
+        if (material.contains("LEAVES") || material.contains("MOSS") || material.contains("GRASS")) {
+            return new Color(92, 151, 82);
+        }
+        if (material.contains("LOG") || material.contains("WOOD")) return new Color(112, 87, 57);
+        if (material.contains("STONE") || material.contains("DEEPSLATE") || material.contains("ORE")) {
+            return new Color(115, 116, 119);
+        }
         return new Color(119, 155, 91);
     }
 
