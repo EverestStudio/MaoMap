@@ -95,6 +95,7 @@ public final class ChunkCaptureService implements Listener {
         World world = chunk.getWorld();
         int[] heights = new int[256];
         String[] materials = new String[256];
+        String[] biomes = new String[256];
         int minHeight = world.getMinHeight();
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
@@ -105,9 +106,10 @@ public final class ChunkCaptureService implements Listener {
                 Material material = world.getBlockAt(blockX, y, blockZ).getType();
                 heights[index] = y;
                 materials[index] = material.name();
+                biomes[index] = world.getBiome(blockX, y, blockZ).name();
             }
         }
-        return new ChunkSnapshot(world.getUID(), world.getName(), chunk.getX(), chunk.getZ(), minHeight, heights, materials);
+        return new ChunkSnapshot(world.getUID(), world.getName(), chunk.getX(), chunk.getZ(), minHeight, heights, materials, biomes);
     }
 
     public int pendingCount() { return pending.size() + (startupScan.size() - startupScanIndex); }
