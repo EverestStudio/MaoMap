@@ -73,11 +73,12 @@ public final class ChunkCaptureService implements Listener {
         }
         if (startupScanIndex >= startupScan.size()) startupScan.clear();
 
-        int processed = 0;
+        int examined = 0;
         var iterator = pending.iterator();
-        while (iterator.hasNext() && processed < chunksPerTick) {
+        while (iterator.hasNext() && examined < chunksPerTick) {
             ChunkKey key = iterator.next();
             iterator.remove();
+            examined++;
             World world = plugin.getServer().getWorld(key.worldId());
             if (world == null || !world.isChunkLoaded(key.x(), key.z())) continue;
             Chunk chunk = world.getChunkAt(key.x(), key.z());
@@ -87,7 +88,6 @@ public final class ChunkCaptureService implements Listener {
                 pending.add(key);
                 break;
             }
-            processed++;
         }
     }
 
