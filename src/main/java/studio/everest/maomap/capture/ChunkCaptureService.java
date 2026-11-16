@@ -11,7 +11,9 @@ import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import studio.everest.maomap.render.TileRenderer;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -22,6 +24,8 @@ public final class ChunkCaptureService implements Listener {
     private final Set<ChunkKey> pending = new LinkedHashSet<>();
     private final int maxQueue;
     private final int chunksPerTick;
+    private final List<ChunkKey> startupScan = new ArrayList<>();
+    private int startupScanIndex;
     private boolean stopped;
 
     public ChunkCaptureService(JavaPlugin plugin, TileRenderer renderer) {
@@ -29,6 +33,15 @@ public final class ChunkCaptureService implements Listener {
         this.renderer = renderer;
         this.maxQueue = Math.max(1, plugin.getConfig().getInt("capture.max-queue-size", 256));
         this.chunksPerTick = Math.max(1, plugin.getConfig().getInt("capture.chunks-per-tick", 1));
+        // Snapshot only chunks that are already loaded. Never call getChunkAt to discover
+        // terrain during startup: this list contains coordinates, not live Chunk objects.
+        for (World world : plugin.getServer().getWorlds()) {
+            for (Chunk chunk : world.getLoadedChunks()) {
+                startupScan.add(new ChunkKey(world.getUID(), chunk.getX(), chunk.getZ()));
+            }
+        }
+        plugin.getLogger().info("MaoMap queued " + startupScan.size()
+                + " already-loaded chunks for gradual initial capture.");
     }
 
     @EventHandler public void onChunkLoad(ChunkLoadEvent event) {
@@ -53,6 +66,13 @@ public final class ChunkCaptureService implements Listener {
     /** Must be called on the server thread. */
     public void processCaptureQueue() {
         if (stopped) return;
+        // Feed the bounded work queue from the startup snapshot as capacity becomes available.
+        while (startupScanIndex < startupScan.size() && pending.size() < maxQueue) {
+            ChunkKey key = startupScan.get(startupScanIndex++);
+            pending.add(key);
+        }
+        if (startupScanIndex >= startupScan.size()) startupScan.clear();
+
         int processed = 0;
         var iterator = pending.iterator();
         while (iterator.hasNext() && processed < chunksPerTick) {
@@ -90,13 +110,14 @@ public final class ChunkCaptureService implements Listener {
         return new ChunkSnapshot(world.getUID(), world.getName(), chunk.getX(), chunk.getZ(), minHeight, heights, materials);
     }
 
-    public int pendingCount() { return pending.size(); }
+    public int pendingCount() { return pending.size() + (startupScan.size() - startupScanIndex); }
     public int renderQueueCount() { return renderer.queuedTaskCount(); }
     public int activeRenderCount() { return renderer.activeTaskCount(); }
 
     public void shutdown() {
         stopped = true;
         pending.clear();
+        startupScan.clear();
         renderer.shutdown();
     }
 
