@@ -12,6 +12,7 @@ render:
   worker-threads: 2
   # Maximum number of render tasks waiting behind active workers.
   queue-capacity: 128
-  # Tile size in pixels (currently one 16x16 tile per chunk).
-  tile-size: 16
+  # Output tile dimensions in pixels. One tile contains 16x16 chunks.
+  tile-size: 256
+  # Root folder for persistent chunk snapshots and generated tiles.
   output-directory: tiles
