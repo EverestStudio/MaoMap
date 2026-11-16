@@ -5,31 +5,43 @@ import studio.everest.maomap.capture.ChunkSnapshot;
 import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Locale;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
- * Custom atlas tile renderer. Receives immutable snapshots only; it never accesses Bukkit.
- * Both the worker count and waiting-task queue are bounded.
+ * Persists immutable chunk snapshots and composes 256x256 atlas tiles.
+ * This class never accesses Bukkit; all world reads happen before submission.
  */
 public final class TileRenderer {
+    private static final int CHUNKS_PER_TILE = 16;
+    private static final int TILE_SIZE = 256;
+    private static final int DATA_MAGIC = 0x4D414F31; // MAO1
+    private static final int DATA_VERSION = 1;
+
     private final Path output;
     private final Consumer<String> errorLogger;
     private final ThreadPoolExecutor workers;
-    private final Set<ChunkKey> inFlight = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<ChunkKey, AtomicReference<ChunkSnapshot>> pending =
+            new ConcurrentHashMap<>();
+    private final Object[] tileLocks = new Object[64];
 
     public TileRenderer(Path output, int workerCount, int queueCapacity, Consumer<String> errorLogger) {
         this.output = output;
         this.errorLogger = errorLogger;
+        for (int i = 0; i < tileLocks.length; i++) tileLocks[i] = new Object();
         int threads = Math.max(1, workerCount);
         int capacity = Math.max(1, queueCapacity);
         this.workers = new ThreadPoolExecutor(threads, threads, 0L, TimeUnit.MILLISECONDS,
@@ -41,46 +53,161 @@ public final class TileRenderer {
     }
 
     /**
-     * @return true when accepted or already being rendered; false when the bounded queue is full.
+     * @return true when accepted (including an update coalesced into an active task),
+     *         false when the bounded worker queue is full.
      */
     public boolean renderAsync(ChunkSnapshot snapshot) {
         ChunkKey key = new ChunkKey(snapshot.worldId(), snapshot.chunkX(), snapshot.chunkZ());
-        if (!inFlight.add(key)) return true;
+        AtomicReference<ChunkSnapshot> existing = pending.get(key);
+        if (existing != null) {
+            synchronized (existing) {
+                existing.set(snapshot);
+            }
+            return true;
+        }
+
+        AtomicReference<ChunkSnapshot> state = new AtomicReference<>(snapshot);
+        if (pending.putIfAbsent(key, state) != null) {
+            AtomicReference<ChunkSnapshot> raced = pending.get(key);
+            synchronized (raced) {
+                raced.set(snapshot);
+            }
+            return true;
+        }
+
         try {
-            workers.execute(() -> {
-                try {
-                    render(snapshot);
-                } finally {
-                    inFlight.remove(key);
-                }
-            });
+            workers.execute(() -> processLatest(key, state));
             return true;
         } catch (java.util.concurrent.RejectedExecutionException rejected) {
-            inFlight.remove(key);
+            pending.remove(key, state);
             return false;
         }
     }
 
-    private void render(ChunkSnapshot snapshot) {
-        try {
-            Path directory = output.resolve(snapshot.worldId().toString());
-            Files.createDirectories(directory);
-            BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-            int[] heights = snapshot.surfaceHeights();
-            String[] materials = snapshot.surfaceMaterials();
-            for (int i = 0; i < 256; i++) {
-                Color base = colorFor(materials[i]);
-                int shade = Math.max(0, Math.min(30, (heights[i] - snapshot.minHeight()) / 2));
-                int rgb = new Color(Math.min(255, base.getRed() + shade),
-                        Math.min(255, base.getGreen() + shade), Math.min(255, base.getBlue() + shade)).getRGB();
-                image.setRGB(i % 16, i / 16, rgb);
+    private void processLatest(ChunkKey key, AtomicReference<ChunkSnapshot> state) {
+        while (true) {
+            ChunkSnapshot snapshot = state.getAndSet(null);
+            if (snapshot != null) {
+                try {
+                    persistAndRender(snapshot);
+                } catch (IOException exception) {
+                    errorLogger.accept("MaoMap could not save/render chunk " + key.x + "," + key.z
+                            + " in world " + key.worldId + ": " + exception.getMessage());
+                }
             }
-            Path target = directory.resolve(snapshot.chunkX() + "_" + snapshot.chunkZ() + ".png");
-            ImageIO.write(image, "png", target.toFile());
-        } catch (IOException exception) {
-            errorLogger.accept("Could not render chunk " + snapshot.chunkX() + "," + snapshot.chunkZ()
-                    + " in world " + snapshot.worldName() + ": " + exception.getMessage());
+
+            synchronized (state) {
+                if (state.get() != null) continue;
+                pending.remove(key, state);
+                return;
+            }
         }
+    }
+
+    private void persistAndRender(ChunkSnapshot snapshot) throws IOException {
+        Path worldDirectory = output.resolve(snapshot.worldId().toString());
+        Path chunkDirectory = worldDirectory.resolve("chunks");
+        Path tileDirectory = worldDirectory.resolve("tiles");
+        Files.createDirectories(chunkDirectory);
+        Files.createDirectories(tileDirectory);
+
+        Path dataFile = chunkDirectory.resolve(snapshot.chunkX() + "_" + snapshot.chunkZ() + ".mcs");
+        writeSnapshotAtomically(dataFile, snapshot);
+
+        int tileX = Math.floorDiv(snapshot.chunkX(), CHUNKS_PER_TILE);
+        int tileZ = Math.floorDiv(snapshot.chunkZ(), CHUNKS_PER_TILE);
+        Object lock = tileLocks[Math.floorMod(31 * snapshot.worldId().hashCode()
+                + 17 * tileX + tileZ, tileLocks.length)];
+        synchronized (lock) {
+            renderTile(worldDirectory, tileDirectory, snapshot.worldId(), tileX, tileZ);
+        }
+    }
+
+    private void writeSnapshotAtomically(Path target, ChunkSnapshot snapshot) throws IOException {
+        Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
+        int[] heights = snapshot.surfaceHeights();
+        String[] materials = snapshot.surfaceMaterials();
+        try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(temporary))) {
+            out.writeInt(DATA_MAGIC);
+            out.writeInt(DATA_VERSION);
+            out.writeInt(snapshot.minHeight());
+            out.writeUTF(snapshot.worldName());
+            for (int i = 0; i < 256; i++) {
+                out.writeInt(heights[i]);
+                out.writeUTF(materials[i]);
+            }
+        }
+        moveAtomically(temporary, target);
+    }
+
+    private void renderTile(Path worldDirectory, Path tileDirectory, UUID worldId,
+                            int tileX, int tileZ) throws IOException {
+        int[] heights = new int[TILE_SIZE * TILE_SIZE];
+        int[] colors = new int[TILE_SIZE * TILE_SIZE];
+        boolean[] present = new boolean[TILE_SIZE * TILE_SIZE];
+
+        for (int localChunkZ = 0; localChunkZ < CHUNKS_PER_TILE; localChunkZ++) {
+            for (int localChunkX = 0; localChunkX < CHUNKS_PER_TILE; localChunkX++) {
+                int chunkX = tileX * CHUNKS_PER_TILE + localChunkX;
+                int chunkZ = tileZ * CHUNKS_PER_TILE + localChunkZ;
+                Path dataFile = worldDirectory.resolve("chunks")
+                        .resolve(chunkX + "_" + chunkZ + ".mcs");
+                if (!Files.isRegularFile(dataFile)) continue;
+                readChunkIntoTile(dataFile, localChunkX * 16, localChunkZ * 16,
+                        heights, colors, present);
+            }
+        }
+
+        BufferedImage image = new BufferedImage(TILE_SIZE, TILE_SIZE, BufferedImage.TYPE_INT_ARGB);
+        for (int z = 0; z < TILE_SIZE; z++) {
+            for (int x = 0; x < TILE_SIZE; x++) {
+                int index = z * TILE_SIZE + x;
+                if (!present[index]) continue;
+                int left = heightAt(heights, present, x - 1, z, heights[index]);
+                int right = heightAt(heights, present, x + 1, z, heights[index]);
+                int up = heightAt(heights, present, x, z - 1, heights[index]);
+                int down = heightAt(heights, present, x, z + 1, heights[index]);
+                double slope = ((left - right) + (up - down) * 0.65) / 18.0;
+                int shade = (int) Math.round(Math.max(-38, Math.min(38, slope)));
+                Color base = new Color(colors[index], true);
+                int red = clamp(base.getRed() + shade);
+                int green = clamp(base.getGreen() + shade);
+                int blue = clamp(base.getBlue() + shade);
+                image.setRGB(x, z, new Color(red, green, blue).getRGB());
+            }
+        }
+
+        Path target = tileDirectory.resolve(tileX + "_" + tileZ + ".png");
+        Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
+        if (!ImageIO.write(image, "png", temporary.toFile())) {
+            throw new IOException("No PNG writer is available");
+        }
+        moveAtomically(temporary, target);
+    }
+
+    private void readChunkIntoTile(Path file, int offsetX, int offsetZ, int[] heights,
+                                   int[] colors, boolean[] present) throws IOException {
+        try (DataInputStream in = new DataInputStream(Files.newInputStream(file))) {
+            if (in.readInt() != DATA_MAGIC) throw new IOException("Invalid chunk data header: " + file);
+            if (in.readInt() != DATA_VERSION) throw new IOException("Unsupported chunk data version: " + file);
+            in.readInt(); // minHeight, reserved for future rendering styles
+            in.readUTF(); // world name
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
+                    int local = z * 16 + x;
+                    int target = (offsetZ + z) * TILE_SIZE + offsetX + x;
+                    heights[target] = in.readInt();
+                    colors[target] = colorFor(in.readUTF()).getRGB();
+                    present[target] = true;
+                }
+            }
+        }
+    }
+
+    private int heightAt(int[] heights, boolean[] present, int x, int z, int fallback) {
+        if (x < 0 || x >= TILE_SIZE || z < 0 || z >= TILE_SIZE) return fallback;
+        int index = z * TILE_SIZE + x;
+        return present[index] ? heights[index] : fallback;
     }
 
     private Color colorFor(String materialName) {
@@ -95,13 +222,18 @@ public final class TileRenderer {
         return new Color(119, 155, 91);
     }
 
-    public int queuedTaskCount() {
-        return workers.getQueue().size();
+    private int clamp(int value) { return Math.max(0, Math.min(255, value)); }
+
+    private void moveAtomically(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException unsupported) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
-    public int activeTaskCount() {
-        return workers.getActiveCount();
-    }
+    public int queuedTaskCount() { return workers.getQueue().size(); }
+    public int activeTaskCount() { return workers.getActiveCount(); }
 
     public void shutdown() {
         workers.shutdown();
