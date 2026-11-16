@@ -20,7 +20,7 @@ public final class MaoMapPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(captureService, this);
         getServer().getScheduler().runTaskTimer(this, captureService::processCaptureQueue, 1L, 1L);
         if (getCommand("maomap") != null) {
-            getCommand("maomap").setExecutor(new MaoMapCommand(this, captureService));
+            getCommand("maomap").setExecutor(new MaoMapCommand(captureService));
         } else {
             getLogger().severe("Command 'maomap' is missing from plugin.yml; disabling MaoMap.");
             getServer().getPluginManager().disablePlugin(this);
