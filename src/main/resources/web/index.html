@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MaoMap — карта сервера</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <header class="brand"><div class="brand-mark">M</div><div><strong>MAO<span>MAP</span></strong><small>КАРТА СЕРВЕРА</small></div></header>
+    <section class="players-section"><div class="section-head"><span>ИГРОКИ ОНЛАЙН</span><b id="player-count">0</b></div><div id="players" class="players"><div class="empty">Загрузка игроков…</div></div></section>
+    <section class="world-section"><div class="section-head">МИР</div><select id="world-select" aria-label="Выбор мира"><option>Загрузка…</option></select></section>
+    <footer><span class="status-dot"></span> MaoMap · ранняя версия</footer>
+  </aside>
+  <main id="viewport" class="viewport">
+    <div id="map" class="map"></div>
+    <div class="zoom"><button id="zoom-in" aria-label="Приблизить">+</button><button id="zoom-out" aria-label="Отдалить">−</button></div>
+    <div class="coords"><span>КООРДИНАТЫ</span><strong id="coordinates">X 0 · Z 0</strong></div>
+    <div id="map-empty" class="map-empty">Здесь появится карта после захвата исследованных чанков.</div>
+  </main>
+  <script src="/app.js"></script>
+</body></html>
