@@ -4,9 +4,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 import studio.everest.maomap.capture.ChunkCaptureService;
 import studio.everest.maomap.command.MaoMapCommand;
 import studio.everest.maomap.render.TileRenderer;
+import studio.everest.maomap.web.WebMapServer;
+import java.io.IOException;
 
 public final class MaoMapPlugin extends JavaPlugin {
     private ChunkCaptureService captureService;
+    private WebMapServer webServer;
 
     @Override
     public void onEnable() {
@@ -26,11 +29,11 @@ public final class MaoMapPlugin extends JavaPlugin {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        getLogger().info("MaoMap enabled. Map rendering is in early development.");
+        if (getConfig().getBoolean("web.enabled", true)) {\n            webServer = new WebMapServer(this, getDataFolder().toPath().resolve(getConfig().getString("render.output-directory", "tiles")));\n            try {\n                webServer.start(getConfig().getString("web.host", "127.0.0.1"), getConfig().getInt("web.port", 8123));\n            } catch (IOException exception) {\n                getLogger().severe("Could not start MaoMap web server: " + exception.getMessage());\n                webServer = null;\n            }\n        }\n        getLogger().info("MaoMap enabled.");
     }
 
     @Override
     public void onDisable() {
-        if (captureService != null) captureService.shutdown();
+        if (webServer != null) webServer.stop();\n        if (captureService != null) captureService.shutdown();
     }
 }
