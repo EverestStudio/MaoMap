@@ -29,11 +29,21 @@ public final class MaoMapPlugin extends JavaPlugin {
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
-        if (getConfig().getBoolean("web.enabled", true)) {\n            webServer = new WebMapServer(this, getDataFolder().toPath().resolve(getConfig().getString("render.output-directory", "tiles")));\n            try {\n                webServer.start(getConfig().getString("web.host", "127.0.0.1"), getConfig().getInt("web.port", 8123));\n            } catch (IOException exception) {\n                getLogger().severe("Could not start MaoMap web server: " + exception.getMessage());\n                webServer = null;\n            }\n        }\n        getLogger().info("MaoMap enabled.");
+        if (getConfig().getBoolean("web.enabled", true)) {
+            webServer = new WebMapServer(this, getDataFolder().toPath().resolve(getConfig().getString("render.output-directory", "tiles")));
+            try {
+                webServer.start(getConfig().getString("web.host", "127.0.0.1"), getConfig().getInt("web.port", 8123));
+            } catch (IOException exception) {
+                getLogger().severe("Could not start MaoMap web server: " + exception.getMessage());
+                webServer = null;
+            }
+        }
+        getLogger().info("MaoMap enabled.");
     }
 
     @Override
     public void onDisable() {
-        if (webServer != null) webServer.stop();\n        if (captureService != null) captureService.shutdown();
+        if (webServer != null) webServer.stop();
+        if (captureService != null) captureService.shutdown();
     }
 }
