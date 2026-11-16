@@ -112,8 +112,8 @@ public final class TileRenderer {
         Path dataFile = chunkDirectory.resolve(snapshot.chunkX() + "_" + snapshot.chunkZ() + ".mcs");
         writeSnapshotAtomically(dataFile, snapshot);
 
-        int tileX = Math.floorDiv(snapshot.chunkX(), CHUNKS_PER_TILE);
-        int tileZ = Math.floorDiv(snapshot.chunkZ(), CHUNKS_PER_TILE);
+        int tileX = TileCoordinates.tileOfChunk(snapshot.chunkX());
+        int tileZ = TileCoordinates.tileOfChunk(snapshot.chunkZ());
         Object lock = tileLocks[Math.floorMod(31 * snapshot.worldId().hashCode()
                 + 17 * tileX + tileZ, tileLocks.length)];
         synchronized (lock) {
