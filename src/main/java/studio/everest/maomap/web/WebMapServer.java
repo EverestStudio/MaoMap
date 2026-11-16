@@ -107,6 +107,40 @@ public final class WebMapServer {
         }
     }
 
+    private void serveTileIndex(HttpExchange exchange, String worldId) throws IOException {
+        try {
+            UUID.fromString(worldId);
+        } catch (IllegalArgumentException invalid) {
+            send(exchange, 400, "text/plain; charset=utf-8", "Invalid world id");
+            return;
+        }
+        Path directory = output.resolve(worldId).resolve("tiles").normalize();
+        if (!directory.startsWith(output) || !Files.isDirectory(directory)) {
+            send(exchange, 200, "application/json; charset=utf-8", "[]");
+            return;
+        }
+        StringBuilder json = new StringBuilder("[");
+        boolean first = true;
+        try (Stream<Path> files = Files.list(directory)) {
+            for (Path file : files.filter(path -> path.getFileName().toString().endsWith(".png"))
+                    .sorted(Comparator.comparing(path -> path.getFileName().toString())).toList()) {
+                String name = file.getFileName().toString();
+                String stem = name.substring(0, name.length() - 4);
+                String[] coordinates = stem.split("_", -1);
+                if (coordinates.length != 2) continue;
+                try {
+                    int x = Integer.parseInt(coordinates[0]);
+                    int z = Integer.parseInt(coordinates[1]);
+                    if (!first) json.append(',');
+                    first = false;
+                    json.append("{\\"x\\":").append(x).append(",\\"z\\":").append(z).append('}');
+                } catch (NumberFormatException ignored) { }
+            }
+        }
+        json.append(']');
+        send(exchange, 200, "application/json; charset=utf-8", json.toString());
+    }
+
     private void serveTile(HttpExchange exchange, String relative) throws IOException {
         if (relative.contains("..") || relative.contains("\\") || relative.startsWith("/")) {
             send(exchange, 400, "text/plain; charset=utf-8", "Invalid tile path");
