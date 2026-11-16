@@ -7,7 +7,7 @@ description: A custom, performance-conscious 2D atlas map for Paper.
 commands:
   maomap:
     description: MaoMap administration commands
-    usage: /maomap <status|render>
+    usage: /maomap status
     permission: maomap.admin
 permissions:
   maomap.admin:
