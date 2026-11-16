@@ -1,7 +1,7 @@
 name: MaoMap
 version: '${version}'
 main: studio.everest.maomap.MaoMapPlugin
-api-version: '1.21'
+api-version: '26.2'
 authors: [EverestStudio]
 description: A custom, performance-conscious 2D atlas map for Paper.
 commands:
