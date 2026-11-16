@@ -135,7 +135,7 @@ public final class WebMapServer {
                     int z = Integer.parseInt(coordinates[1]);
                     if (!first) json.append(',');
                     first = false;
-                    json.append("{\\\"x\\":").append(x).append(",\\\"z\\":").append(z).append('}');
+                    json.append("{\"x\":").append(x).append(",\"z\":").append(z).append('}');
                 } catch (NumberFormatException ignored) { }
             }
         }
