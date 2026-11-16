@@ -1,0 +1,15 @@
+name: MaoMap
+version: '${version}'
+main: studio.everest.maomap.MaoMapPlugin
+api-version: '1.21'
+authors: [EverestStudio]
+description: A custom, performance-conscious 2D atlas map for Paper.
+commands:
+  maomap:
+    description: MaoMap administration commands
+    usage: /maomap <status|render>
+    permission: maomap.admin
+permissions:
+  maomap.admin:
+    description: Allows managing MaoMap
+    default: op
