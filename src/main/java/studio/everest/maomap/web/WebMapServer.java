@@ -90,6 +90,8 @@ public final class WebMapServer {
             send(exchange, 200, "application/json; charset=utf-8", worldsJson.get());
         } else if (path.equals("/api/players")) {
             send(exchange, 200, "application/json; charset=utf-8", playersJson.get());
+        } else if (path.startsWith("/tiles/") && path.endsWith("/index.json")) {
+            serveTileIndex(exchange, path.substring("/tiles/".length(), path.length() - "/index.json".length()));
         } else if (path.startsWith("/tiles/")) {
             serveTile(exchange, path.substring("/tiles/".length()));
         } else {
@@ -133,7 +135,7 @@ public final class WebMapServer {
                     int z = Integer.parseInt(coordinates[1]);
                     if (!first) json.append(',');
                     first = false;
-                    json.append("{\\"x\\":").append(x).append(",\\"z\\":").append(z).append('}');
+                    json.append("{\\\"x\\":").append(x).append(",\\\"z\\":").append(z).append('}');
                 } catch (NumberFormatException ignored) { }
             }
         }
