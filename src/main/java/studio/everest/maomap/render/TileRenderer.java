@@ -58,29 +58,27 @@ public final class TileRenderer {
      */
     public boolean renderAsync(ChunkSnapshot snapshot) {
         ChunkKey key = new ChunkKey(snapshot.worldId(), snapshot.chunkX(), snapshot.chunkZ());
-        AtomicReference<ChunkSnapshot> existing = pending.get(key);
-        if (existing != null) {
-            synchronized (existing) {
-                existing.set(snapshot);
+        while (true) {
+            AtomicReference<ChunkSnapshot> existing = pending.get(key);
+            if (existing != null) {
+                synchronized (existing) {
+                    // The worker may have removed this state while we waited for its lock.
+                    if (pending.get(key) != existing) continue;
+                    existing.set(snapshot);
+                    return true;
+                }
             }
-            return true;
-        }
 
-        AtomicReference<ChunkSnapshot> state = new AtomicReference<>(snapshot);
-        if (pending.putIfAbsent(key, state) != null) {
-            AtomicReference<ChunkSnapshot> raced = pending.get(key);
-            synchronized (raced) {
-                raced.set(snapshot);
+            AtomicReference<ChunkSnapshot> state = new AtomicReference<>(snapshot);
+            if (pending.putIfAbsent(key, state) != null) continue;
+
+            try {
+                workers.execute(() -> processLatest(key, state));
+                return true;
+            } catch (java.util.concurrent.RejectedExecutionException rejected) {
+                pending.remove(key, state);
+                return false;
             }
-            return true;
-        }
-
-        try {
-            workers.execute(() -> processLatest(key, state));
-            return true;
-        } catch (java.util.concurrent.RejectedExecutionException rejected) {
-            pending.remove(key, state);
-            return false;
         }
     }
 
