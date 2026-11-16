@@ -16,3 +16,9 @@ render:
   tile-size: 256
   # Root folder for persistent chunk snapshots and generated tiles.
   output-directory: tiles
+
+web:
+  # Bind to 127.0.0.1 for local access only; use 0.0.0.0 to expose it externally.
+  enabled: true
+  host: 127.0.0.1
+  port: 8123
