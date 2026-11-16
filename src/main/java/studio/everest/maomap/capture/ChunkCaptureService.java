@@ -32,7 +32,6 @@ public final class ChunkCaptureService implements Listener {
     }
 
     @EventHandler public void onChunkLoad(ChunkLoadEvent event) {
-        // Existing chunks must also be mapped when they enter the server's loaded set.
         enqueue(event.getChunk());
     }
 
@@ -62,7 +61,12 @@ public final class ChunkCaptureService implements Listener {
             World world = plugin.getServer().getWorld(key.worldId());
             if (world == null || !world.isChunkLoaded(key.x(), key.z())) continue;
             Chunk chunk = world.getChunkAt(key.x(), key.z());
-            renderer.renderAsync(snapshot(chunk));
+            ChunkSnapshot snapshot = snapshot(chunk);
+            if (!renderer.renderAsync(snapshot)) {
+                // Keep the request for a later tick instead of running rendering on the server thread.
+                pending.add(key);
+                break;
+            }
             processed++;
         }
     }
@@ -75,8 +79,10 @@ public final class ChunkCaptureService implements Listener {
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
                 int index = z * 16 + x;
-                int y = world.getHighestBlockYAt(chunk.getX() * 16 + x, chunk.getZ() * 16 + z);
-                Material material = world.getBlockAt(chunk.getX() * 16 + x, y, chunk.getZ() * 16 + z).getType();
+                int blockX = chunk.getX() * 16 + x;
+                int blockZ = chunk.getZ() * 16 + z;
+                int y = world.getHighestBlockYAt(blockX, blockZ);
+                Material material = world.getBlockAt(blockX, y, blockZ).getType();
                 heights[index] = y;
                 materials[index] = material.name();
             }
@@ -85,6 +91,14 @@ public final class ChunkCaptureService implements Listener {
     }
 
     public int pendingCount() { return pending.size(); }
-    public void shutdown() { stopped = true; pending.clear(); renderer.shutdown(); }
+    public int renderQueueCount() { return renderer.queuedTaskCount(); }
+    public int activeRenderCount() { return renderer.activeTaskCount(); }
+
+    public void shutdown() {
+        stopped = true;
+        pending.clear();
+        renderer.shutdown();
+    }
+
     private record ChunkKey(UUID worldId, int x, int z) { }
 }
