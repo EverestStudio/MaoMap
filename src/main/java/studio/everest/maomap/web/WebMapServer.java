@@ -83,7 +83,8 @@ public final class WebMapServer {
                     .append(json(player.getName())).append("\",\"ping\":").append(Math.max(0, player.getPing()))
                     .append(",\"world\":\"").append(player.getWorld().getUID()).append("\",\"x\":")
                     .append(player.getLocation().getBlockX()).append(",\"z\":")
-                    .append(player.getLocation().getBlockZ()).append('}');
+                    .append(player.getLocation().getBlockZ()).append(",\"yaw\":")
+                    .append(String.format(java.util.Locale.ROOT, "%.2f", player.getLocation().getYaw())).append('}');
         }
         playerJson.append(']');
         playersJson.set(playerJson.toString());
