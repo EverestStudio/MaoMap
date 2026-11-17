@@ -5,11 +5,13 @@ import studio.everest.maomap.capture.ChunkCaptureService;
 import studio.everest.maomap.command.MaoMapCommand;
 import studio.everest.maomap.render.TileRenderer;
 import studio.everest.maomap.web.WebMapServer;
+import studio.everest.maomap.marker.MarkerStore;
 import java.io.IOException;
 
 public final class MaoMapPlugin extends JavaPlugin {
     private ChunkCaptureService captureService;
     private WebMapServer webServer;
+    private MarkerStore markerStore;
 
     @Override
     public void onEnable() {
@@ -20,17 +22,18 @@ public final class MaoMapPlugin extends JavaPlugin {
                 getConfig().getInt("render.queue-capacity", 128),
                 message -> getLogger().warning(message));
         captureService = new ChunkCaptureService(this, renderer);
+        markerStore = new MarkerStore(this);
         getServer().getPluginManager().registerEvents(captureService, this);
         getServer().getScheduler().runTaskTimer(this, captureService::processCaptureQueue, 1L, 1L);
         if (getCommand("maomap") != null) {
-            getCommand("maomap").setExecutor(new MaoMapCommand(captureService));
+            getCommand("maomap").setExecutor(new MaoMapCommand(captureService, markerStore));
         } else {
             getLogger().severe("Command 'maomap' is missing from plugin.yml; disabling MaoMap.");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
         if (getConfig().getBoolean("web.enabled", true)) {
-            webServer = new WebMapServer(this, getDataFolder().toPath().resolve(getConfig().getString("render.output-directory", "tiles")));
+            webServer = new WebMapServer(this, getDataFolder().toPath().resolve(getConfig().getString("render.output-directory", "tiles")), markerStore);
             try {
                 webServer.start(getConfig().getString("web.host", "127.0.0.1"), getConfig().getInt("web.port", 8123));
             } catch (IOException exception) {
