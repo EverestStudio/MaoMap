@@ -130,7 +130,7 @@ public final class WebMapServer {
             if (filter != null && !filter.equals(marker.worldId())) continue;
             if (!first) json.append(',');
             first = false;
-            json.append("{\\"id\\":\\"").append(json(marker.id())).append("\\",\\"world\\":\\"")
+            json.append("{\"id\":\"").append(json(marker.id())).append("\",\"world\":\"")
                     .append(marker.worldId()).append("\\",\\"x\\":").append(marker.x())
                     .append(",\\"z\\":").append(marker.z()).append(",\\"emoji\\":\\"")
                     .append(json(marker.emoji())).append("\\",\\"name\\":\\"")
