@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import studio.everest.maomap.capture.ChunkSnapshot;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
 import java.io.DataInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -79,6 +80,59 @@ class TileRendererTerrainTest {
         }
     }
 
+
+    @Test
+    void rendersShallowWaterAndAdjacentBanksWithSubtleShorelineTint() throws Exception {
+        UUID worldId = UUID.randomUUID();
+        int[] ground = new int[256];
+        String[] materials = new String[256];
+        int[] canopy = new int[256];
+        String[] canopyMaterials = new String[256];
+        int[] water = new int[256];
+        String[] biomes = new String[256];
+        Arrays.fill(ground, 64);
+        Arrays.fill(materials, "GRASS_BLOCK");
+        Arrays.fill(canopy, -64);
+        Arrays.fill(canopyMaterials, "");
+        Arrays.fill(biomes, "PLAINS");
+
+        // One isolated shallow-water pixel and a small water patch with an interior pixel.
+        water[1] = 1;
+        materials[1] = "SAND";
+        biomes[1] = "RIVER";
+        for (int z = 0; z <= 2; z++) {
+            for (int x = 3; x <= 5; x++) {
+                int index = z * 16 + x;
+                water[index] = 1;
+                materials[index] = "SAND";
+                biomes[index] = "RIVER";
+            }
+        }
+
+        ChunkSnapshot snapshot = new ChunkSnapshot(worldId, "world", 0, 0, -64,
+                ground, materials, canopy, canopyMaterials, water, biomes);
+        AtomicReference<String> renderError = new AtomicReference<>();
+        TileRenderer renderer = new TileRenderer(tempDir, 1, 4, renderError::set);
+        try {
+            assertTrue(renderer.renderAsync(snapshot));
+            Path tile = tempDir.resolve(worldId.toString()).resolve("tiles/0_0.png");
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!Files.isRegularFile(tile) && System.nanoTime() < deadline) Thread.sleep(20);
+            assertTrue(Files.isRegularFile(tile));
+            var rendered = ImageIO.read(tile.toFile());
+            assertNotNull(rendered);
+
+            Color bank = new Color(rendered.getRGB(0, 0));
+            Color shallowWater = new Color(rendered.getRGB(1, 0));
+            Color interiorWater = new Color(rendered.getRGB(4, 1));
+            assertTrue(bank.getRed() > 126, "the bank edge should receive a restrained warm tint");
+            assertTrue(shallowWater.getBlue() > interiorWater.getBlue(),
+                    "shallow water at the shore should be more turquoise than interior water");
+            assertNull(renderError.get(), renderError.get());
+        } finally {
+            renderer.shutdown();
+        }
+    }
 
     @Test
     void readsLegacyV1AndV2ChunkSnapshotsWhenRebuildingTile() throws Exception {
