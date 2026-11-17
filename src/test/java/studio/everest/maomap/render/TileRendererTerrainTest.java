@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,7 +40,8 @@ class TileRendererTerrainTest {
 
         ChunkSnapshot snapshot = new ChunkSnapshot(worldId, "world", 0, 0, -64,
                 ground, materials, canopy, canopyMaterials, water, biomes);
-        TileRenderer renderer = new TileRenderer(tempDir, 1, 4, message -> fail(message));
+        AtomicReference<String> renderError = new AtomicReference<>();
+        TileRenderer renderer = new TileRenderer(tempDir, 1, 4, renderError::set);
         try {
             assertTrue(renderer.renderAsync(snapshot));
             Path tile = tempDir.resolve(worldId.toString()).resolve("tiles/0_0.png");
@@ -68,10 +70,64 @@ class TileRendererTerrainTest {
                 assertEquals(22, in.readInt());
                 assertEquals("OCEAN", in.readUTF());
             }
-            assertNotNull(ImageIO.read(tile.toFile()));
-            assertTrue((ImageIO.read(tile.toFile()).getRGB(0, 0) >>> 24) != 0);
+            var rendered = ImageIO.read(tile.toFile());
+            assertNotNull(rendered);
+            assertTrue((rendered.getRGB(0, 0) >>> 24) != 0);
+            assertNull(renderError.get(), renderError.get());
         } finally {
             renderer.shutdown();
+        }
+    }
+
+
+    @Test
+    void readsLegacyV1AndV2ChunkSnapshotsWhenRebuildingTile() throws Exception {
+        UUID worldId = UUID.randomUUID();
+        Path worldDir = tempDir.resolve(worldId.toString());
+        Path chunks = worldDir.resolve("chunks");
+        Files.createDirectories(chunks);
+        writeLegacyChunk(chunks.resolve("0_0.mcs"), 1, "PLAINS");
+        writeLegacyChunk(chunks.resolve("1_0.mcs"), 2, "FOREST");
+
+        int[] heights = new int[256];
+        String[] materials = new String[256];
+        int[] canopy = new int[256];
+        String[] canopyMaterials = new String[256];
+        int[] water = new int[256];
+        String[] biomes = new String[256];
+        Arrays.fill(heights, 70);
+        Arrays.fill(materials, "STONE");
+        Arrays.fill(canopy, -64);
+        Arrays.fill(canopyMaterials, "");
+        Arrays.fill(biomes, "PLAINS");
+        ChunkSnapshot trigger = new ChunkSnapshot(worldId, "world", 2, 0, -64,
+                heights, materials, canopy, canopyMaterials, water, biomes);
+        AtomicReference<String> renderError = new AtomicReference<>();
+        TileRenderer renderer = new TileRenderer(tempDir, 1, 4, renderError::set);
+        try {
+            assertTrue(renderer.renderAsync(trigger));
+            Path tile = worldDir.resolve("tiles/0_0.png");
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!Files.isRegularFile(tile) && System.nanoTime() < deadline) Thread.sleep(20);
+            assertTrue(Files.isRegularFile(tile));
+            assertNotNull(ImageIO.read(tile.toFile()));
+            assertNull(renderError.get(), renderError.get());
+        } finally {
+            renderer.shutdown();
+        }
+    }
+
+    private void writeLegacyChunk(Path file, int version, String biome) throws Exception {
+        try (var out = new java.io.DataOutputStream(Files.newOutputStream(file))) {
+            out.writeInt(0x4D414F31);
+            out.writeInt(version);
+            out.writeInt(-64);
+            out.writeUTF("world");
+            for (int i = 0; i < 256; i++) {
+                out.writeInt(64);
+                out.writeUTF("GRASS_BLOCK");
+                if (version >= 2) out.writeUTF(biome);
+            }
         }
     }
 
