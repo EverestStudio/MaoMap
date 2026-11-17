@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import studio.everest.maomap.capture.ChunkSnapshot;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
 import java.io.DataInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
