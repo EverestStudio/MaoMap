@@ -8,3 +8,5 @@
 
 .zoom button.zoom-level{width:52px;font-size:11px;font-weight:800;letter-spacing:.2px}
 .zoom button.zoom-level:hover{color:var(--accent)}
+
+.map-player{position:absolute;transform:translate(-50%,-50%);z-index:4;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none;filter:drop-shadow(0 2px 3px #000)}.map-player img{width:28px;height:28px;border:2px solid #8ed45b;border-radius:7px;background:#18212c;image-rendering:pixelated}.map-player span{max-width:110px;padding:1px 5px;border-radius:4px;background:#101820eF;color:#fff;font:700 10px/1.4 system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
