@@ -101,15 +101,29 @@ public final class ChunkCaptureService implements Listener {
                 int blockX = chunk.getX() * 16 + x;
                 int blockZ = chunk.getZ() * 16 + z;
 
-                int groundY = world.getHighestBlockYAt(blockX, blockZ, HeightMap.MOTION_BLOCKING_NO_LEAVES);
+                int topY = world.getHighestBlockYAt(blockX, blockZ, HeightMap.WORLD_SURFACE);
+                Material topType = world.getBlockAt(blockX, topY, blockZ).getType();
+                int groundY;
+                int depth = 0;
+
+                if (topType == Material.WATER) {
+                    // WORLD_SURFACE reaches the water surface; walk down to the actual seabed.
+                    int y = topY;
+                    while (y >= minHeight && world.getBlockAt(blockX, y, blockZ).getType() == Material.WATER) {
+                        depth++;
+                        y--;
+                    }
+                    groundY = Math.max(minHeight, y);
+                } else {
+                    groundY = world.getHighestBlockYAt(blockX, blockZ, HeightMap.MOTION_BLOCKING_NO_LEAVES);
+                }
+
                 Block ground = world.getBlockAt(blockX, groundY, blockZ);
                 groundHeights[index] = groundY;
                 groundMaterials[index] = ground.getType().name();
                 biomes[index] = world.getBiome(blockX, groundY, blockZ).name();
+                waterDepths[index] = depth;
 
-                int topY = world.getHighestBlockYAt(blockX, blockZ, HeightMap.WORLD_SURFACE);
-                Block top = world.getBlockAt(blockX, topY, blockZ);
-                Material topType = top.getType();
                 if (topY > groundY && (topType.name().contains("LEAVES")
                         || topType.name().contains("LOG") || topType.name().contains("WOOD"))) {
                     canopyHeights[index] = topY;
@@ -118,15 +132,6 @@ public final class ChunkCaptureService implements Listener {
                     canopyHeights[index] = minHeight;
                     canopyMaterials[index] = "";
                 }
-
-                // Count a contiguous water column immediately above the terrain floor.
-                int depth = 0;
-                for (int y = groundY + 1; y < maxHeight; y++) {
-                    Material type = world.getBlockAt(blockX, y, blockZ).getType();
-                    if (type == Material.WATER) depth++;
-                    else break;
-                }
-                waterDepths[index] = depth;
             }
         }
         return new ChunkSnapshot(world.getUID(), world.getName(), chunk.getX(), chunk.getZ(),
