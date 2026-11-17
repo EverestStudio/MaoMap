@@ -55,7 +55,15 @@ public final class ChunkCaptureService implements Listener {
     public void enqueue(Chunk chunk) {
         if (stopped) return;
         ChunkKey key = new ChunkKey(chunk.getWorld().getUID(), chunk.getX(), chunk.getZ());
-        if (pending.contains(key) || pending.size() >= maxQueue) return;
+        if (pending.contains(key)) return;
+        // Prefer fresh live changes over older queued work when the bounded queue is full.
+        if (pending.size() >= maxQueue) {
+            var oldest = pending.iterator();
+            if (oldest.hasNext()) {
+                oldest.next();
+                oldest.remove();
+            }
+        }
         pending.add(key);
     }
 
@@ -124,14 +132,21 @@ public final class ChunkCaptureService implements Listener {
                 biomes[index] = world.getBiome(blockX, groundY, blockZ).name();
                 waterDepths[index] = depth;
 
-                if (topY > groundY && (topType.name().contains("LEAVES")
-                        || topType.name().contains("LOG") || topType.name().contains("WOOD"))) {
-                    canopyHeights[index] = topY;
-                    canopyMaterials[index] = topType.name();
-                } else {
-                    canopyHeights[index] = minHeight;
-                    canopyMaterials[index] = "";
+                int canopyY = minHeight;
+                String canopyMaterial = "";
+                // Find the actual canopy even when a flower, snow layer or other block sits above it.
+                for (int y = topY; y > groundY; y--) {
+                    Material candidate = world.getBlockAt(blockX, y, blockZ).getType();
+                    String candidateName = candidate.name();
+                    if (candidateName.contains("LEAVES") || candidateName.contains("LOG")
+                            || candidateName.contains("WOOD")) {
+                        canopyY = y;
+                        canopyMaterial = candidateName;
+                        break;
+                    }
                 }
+                canopyHeights[index] = canopyY;
+                canopyMaterials[index] = canopyMaterial;
             }
         }
         return new ChunkSnapshot(world.getUID(), world.getName(), chunk.getX(), chunk.getZ(),
