@@ -178,7 +178,8 @@ public final class TileRenderer {
                 int shade = (int) Math.round(Math.max(-48, Math.min(48, slope * 1.25)));
                 Color base = new Color(colors[index], true);
                 boolean water = waterDepths[index] > 0;
-                boolean shoreline = hasAdjacentWater(waterDepths, present, x, z);
+                boolean shoreline = water ? hasAdjacentLand(waterDepths, present, x, z)
+                        : hasAdjacentWater(waterDepths, present, x, z);
                 if (water) {
                     int depth = Math.min(40, waterDepths[index]);
                     base = blend(base, new Color(35, 91, 145), Math.min(0.62, 0.18 + depth / 80.0));
@@ -238,6 +239,19 @@ public final class TileRenderer {
                 }
             }
         }
+    }
+
+    private boolean hasAdjacentLand(int[] waterDepths, boolean[] present, int x, int z) {
+        return isLandAt(waterDepths, present, x - 1, z)
+                || isLandAt(waterDepths, present, x + 1, z)
+                || isLandAt(waterDepths, present, x, z - 1)
+                || isLandAt(waterDepths, present, x, z + 1);
+    }
+
+    private boolean isLandAt(int[] waterDepths, boolean[] present, int x, int z) {
+        if (x < 0 || x >= TILE_SIZE || z < 0 || z >= TILE_SIZE) return false;
+        int index = z * TILE_SIZE + x;
+        return present[index] && waterDepths[index] == 0;
     }
 
     private boolean hasAdjacentWater(int[] waterDepths, boolean[] present, int x, int z) {
