@@ -29,7 +29,7 @@ public final class TileRenderer {
     private static final int CHUNKS_PER_TILE = 16;
     private static final int TILE_SIZE = 256;
     private static final int DATA_MAGIC = 0x4D414F31; // MAO1
-    private static final int DATA_VERSION = 2;
+    private static final int DATA_VERSION = 3;
 
     private final Path output;
     private final Consumer<String> errorLogger;
@@ -122,8 +122,11 @@ public final class TileRenderer {
 
     private void writeSnapshotAtomically(Path target, ChunkSnapshot snapshot) throws IOException {
         Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
-        int[] heights = snapshot.surfaceHeights();
-        String[] materials = snapshot.surfaceMaterials();
+        int[] heights = snapshot.groundHeights();
+        String[] materials = snapshot.groundMaterials();
+        int[] canopyHeights = snapshot.canopyHeights();
+        String[] canopyMaterials = snapshot.canopyMaterials();
+        int[] waterDepths = snapshot.waterDepths();
         String[] biomes = snapshot.surfaceBiomes();
         try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(temporary))) {
             out.writeInt(DATA_MAGIC);
@@ -133,6 +136,9 @@ public final class TileRenderer {
             for (int i = 0; i < 256; i++) {
                 out.writeInt(heights[i]);
                 out.writeUTF(materials[i]);
+                out.writeInt(canopyHeights[i]);
+                out.writeUTF(canopyMaterials[i]);
+                out.writeInt(waterDepths[i]);
                 out.writeUTF(biomes[i]);
             }
         }
@@ -143,6 +149,8 @@ public final class TileRenderer {
                             int tileX, int tileZ) throws IOException {
         int[] heights = new int[TILE_SIZE * TILE_SIZE];
         int[] colors = new int[TILE_SIZE * TILE_SIZE];
+        int[] canopyHeights = new int[TILE_SIZE * TILE_SIZE];
+        int[] waterDepths = new int[TILE_SIZE * TILE_SIZE];
         boolean[] present = new boolean[TILE_SIZE * TILE_SIZE];
 
         for (int localChunkZ = 0; localChunkZ < CHUNKS_PER_TILE; localChunkZ++) {
@@ -153,7 +161,7 @@ public final class TileRenderer {
                         .resolve(chunkX + "_" + chunkZ + ".mcs");
                 if (!Files.isRegularFile(dataFile)) continue;
                 readChunkIntoTile(dataFile, localChunkX * 16, localChunkZ * 16,
-                        heights, colors, present);
+                        heights, colors, canopyHeights, waterDepths, present);
             }
         }
 
@@ -167,8 +175,15 @@ public final class TileRenderer {
                 int up = heightAt(heights, present, x, z - 1, heights[index]);
                 int down = heightAt(heights, present, x, z + 1, heights[index]);
                 double slope = ((left - right) + (up - down) * 0.65) / 18.0;
-                int shade = (int) Math.round(Math.max(-38, Math.min(38, slope)));
+                int shade = (int) Math.round(Math.max(-48, Math.min(48, slope * 1.25)));
                 Color base = new Color(colors[index], true);
+                if (waterDepths[index] > 0) {
+                    int depth = Math.min(40, waterDepths[index]);
+                    base = blend(base, new Color(35, 91, 145), Math.min(0.62, 0.18 + depth / 80.0));
+                } else if (canopyHeights[index] > heights[index]) {
+                    int canopyRise = canopyHeights[index] - heights[index];
+                    base = blend(base, new Color(42, 105, 55), Math.min(0.88, 0.48 + canopyRise / 32.0));
+                }
                 image.setRGB(x, z, new Color(clamp(base.getRed() + shade),
                         clamp(base.getGreen() + shade), clamp(base.getBlue() + shade)).getRGB());
             }
@@ -183,7 +198,8 @@ public final class TileRenderer {
     }
 
     private void readChunkIntoTile(Path file, int offsetX, int offsetZ, int[] heights,
-                                   int[] colors, boolean[] present) throws IOException {
+                                   int[] colors, int[] canopyHeights, int[] waterDepths,
+                                   boolean[] present) throws IOException {
         try (DataInputStream in = new DataInputStream(Files.newInputStream(file))) {
             if (in.readInt() != DATA_MAGIC) throw new IOException("Invalid chunk data header: " + file);
             int version = in.readInt();
@@ -198,8 +214,13 @@ public final class TileRenderer {
                     int target = (offsetZ + z) * TILE_SIZE + offsetX + x;
                     int height = in.readInt();
                     String material = in.readUTF();
+                    int canopyHeight = version >= 3 ? in.readInt() : height;
+                    String canopyMaterial = version >= 3 ? in.readUTF() : "";
+                    int waterDepth = version >= 3 ? in.readInt() : 0;
                     String biome = version >= 2 ? in.readUTF() : "PLAINS";
                     heights[target] = height;
+                    canopyHeights[target] = canopyHeight;
+                    waterDepths[target] = waterDepth;
                     colors[target] = colorFor(material, biome).getRGB();
                     present[target] = true;
                 }
@@ -254,6 +275,13 @@ public final class TileRenderer {
             return new Color(115, 116, 119);
         }
         return new Color(119, 155, 91);
+    }
+
+    private Color blend(Color base, Color overlay, double amount) {
+        double inverse = 1.0 - amount;
+        return new Color((int) (base.getRed() * inverse + overlay.getRed() * amount),
+                (int) (base.getGreen() * inverse + overlay.getGreen() * amount),
+                (int) (base.getBlue() * inverse + overlay.getBlue() * amount));
     }
 
     private int clamp(int value) { return Math.max(0, Math.min(255, value)); }
