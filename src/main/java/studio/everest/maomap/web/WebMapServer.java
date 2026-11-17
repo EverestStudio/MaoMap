@@ -31,9 +31,10 @@ public final class WebMapServer {
     private final AtomicReference<String> playersJson = new AtomicReference<>("[]");
     private HttpServer server;
 
-    public WebMapServer(JavaPlugin plugin, Path output) {
+    public WebMapServer(JavaPlugin plugin, Path output, MarkerStore markers) {
         this.plugin = plugin;
         this.output = output.toAbsolutePath().normalize();
+        this.markers = markers;
     }
 
     public void start(String host, int port) throws IOException {
@@ -93,6 +94,10 @@ public final class WebMapServer {
             send(exchange, 200, "application/json; charset=utf-8", worldsJson.get());
         } else if (path.equals("/api/players")) {
             send(exchange, 200, "application/json; charset=utf-8", playersJson.get());
+        } else if (path.equals("/api/markers")) {
+            String query = exchange.getRequestURI().getRawQuery();
+            String worldId = query != null && query.startsWith("world=") ? query.substring(6) : "";
+            send(exchange, 200, "application/json; charset=utf-8", markerJson(worldId));
         } else if (path.startsWith("/tiles/") && path.endsWith("/index.json")) {
             serveTileIndex(exchange, path.substring("/tiles/".length(), path.length() - "/index.json".length()));
         } else if (path.startsWith("/tiles/")) {
