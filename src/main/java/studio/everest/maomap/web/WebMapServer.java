@@ -67,9 +67,9 @@ public final class WebMapServer {
             if (!first) worldJson.append(',');
             first = false;
             var spawn = world.getSpawnLocation();
-            worldJson.append("{\\"id\\":\\"").append(world.getUID()).append("\\",\\"name\\":\\"")
-                    .append(json(world.getName())).append("\\",\\"spawnX\\":").append(spawn.getBlockX())
-                    .append(",\\"spawnZ\\":").append(spawn.getBlockZ()).append('}');
+            worldJson.append("{\"id\":\"").append(world.getUID()).append("\",\"name\":\"")
+                    .append(json(world.getName())).append("\",\"spawnX\":").append(spawn.getBlockX())
+                    .append(",\"spawnZ\":").append(spawn.getBlockZ()).append('}');
         }
         worldJson.append(']');
         worldsJson.set(worldJson.toString());
