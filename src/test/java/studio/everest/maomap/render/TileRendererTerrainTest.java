@@ -132,6 +132,49 @@ class TileRendererTerrainTest {
     }
 
     @Test
+    void rendersDistinctTreeCanopiesAndHighlightsShorelines() throws Exception {
+        UUID worldId = UUID.randomUUID();
+        int[] ground = new int[256];
+        String[] materials = new String[256];
+        int[] canopy = new int[256];
+        String[] canopyMaterials = new String[256];
+        int[] water = new int[256];
+        String[] biomes = new String[256];
+        Arrays.fill(ground, 64);
+        Arrays.fill(materials, "GRASS_BLOCK");
+        Arrays.fill(canopy, -64);
+        Arrays.fill(canopyMaterials, "");
+        Arrays.fill(biomes, "PLAINS");
+        canopy[0] = 78;
+        canopyMaterials[0] = "OAK_LEAVES";
+        canopy[1] = 78;
+        canopyMaterials[1] = "BIRCH_LEAVES";
+        water[18] = 2; // shallow water at (2, 1), beside the shoreline pixel (1, 1)
+
+        ChunkSnapshot snapshot = new ChunkSnapshot(worldId, "world", 0, 0, -64,
+                ground, materials, canopy, canopyMaterials, water, biomes);
+        AtomicReference<String> renderError = new AtomicReference<>();
+        TileRenderer renderer = new TileRenderer(tempDir, 1, 4, renderError::set);
+        try {
+            assertTrue(renderer.renderAsync(snapshot));
+            Path tile = tempDir.resolve(worldId.toString()).resolve("tiles/0_0.png");
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!Files.isRegularFile(tile) && System.nanoTime() < deadline) Thread.sleep(20);
+            assertTrue(Files.isRegularFile(tile), "rendered tile should appear");
+            var image = ImageIO.read(tile.toFile());
+            assertNotEquals(image.getRGB(0, 0), image.getRGB(1, 0),
+                    "oak and birch canopy should have distinct colors");
+            assertNotEquals(image.getRGB(1, 1), image.getRGB(5, 5),
+                    "shoreline should be highlighted compared with ordinary grass");
+            assertNotEquals(image.getRGB(2, 1), image.getRGB(5, 5),
+                    "shallow water should have its own color");
+            assertNull(renderError.get(), renderError.get());
+        } finally {
+            renderer.shutdown();
+        }
+    }
+
+    @Test
     void snapshotDefensivelyCopiesTerrainArrays() {
         int[] heights = new int[256];
         String[] materials = new String[256];
