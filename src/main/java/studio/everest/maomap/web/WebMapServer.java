@@ -131,10 +131,10 @@ public final class WebMapServer {
             if (!first) json.append(',');
             first = false;
             json.append("{\"id\":\"").append(json(marker.id())).append("\",\"world\":\"")
-                    .append(marker.worldId()).append("\\",\\"x\\":").append(marker.x())
-                    .append(",\\"z\\":").append(marker.z()).append(",\\"emoji\\":\\"")
-                    .append(json(marker.emoji())).append("\\",\\"name\\":\\"")
-                    .append(json(marker.name())).append("\\"}");
+                    .append(marker.worldId()).append("\",\"x\":").append(marker.x())
+                    .append(",\"z\":").append(marker.z()).append(",\"emoji\":\"")
+                    .append(json(marker.emoji())).append("\",\"name\":\"")
+                    .append(json(marker.name())).append("\"}");
         }
         return json.append(']').toString();
     }
