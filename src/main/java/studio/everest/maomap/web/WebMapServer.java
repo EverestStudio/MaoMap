@@ -6,6 +6,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import studio.everest.maomap.marker.MapMarker;
+import studio.everest.maomap.marker.MarkerStore;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,6 +26,7 @@ import java.util.stream.Stream;
 public final class WebMapServer {
     private final JavaPlugin plugin;
     private final Path output;
+    private final MarkerStore markers;
     private final AtomicReference<String> worldsJson = new AtomicReference<>("[]");
     private final AtomicReference<String> playersJson = new AtomicReference<>("[]");
     private HttpServer server;
@@ -107,6 +110,28 @@ public final class WebMapServer {
                 sendBytes(exchange, 200, type, bytes);
             }
         }
+    }
+
+    private String markerJson(String worldId) {
+        UUID filter = null;
+        try {
+            if (!worldId.isBlank()) filter = UUID.fromString(worldId);
+        } catch (IllegalArgumentException invalid) {
+            return "[]";
+        }
+        StringBuilder json = new StringBuilder("[");
+        boolean first = true;
+        for (MapMarker marker : markers.all()) {
+            if (filter != null && !filter.equals(marker.worldId())) continue;
+            if (!first) json.append(',');
+            first = false;
+            json.append("{\\"id\\":\\"").append(json(marker.id())).append("\\",\\"world\\":\\"")
+                    .append(marker.worldId()).append("\\",\\"x\\":").append(marker.x())
+                    .append(",\\"z\\":").append(marker.z()).append(",\\"emoji\\":\\"")
+                    .append(json(marker.emoji())).append("\\",\\"name\\":\\"")
+                    .append(json(marker.name())).append("\\"}");
+        }
+        return json.append(']').toString();
     }
 
     private void serveTileIndex(HttpExchange exchange, String worldId) throws IOException {
