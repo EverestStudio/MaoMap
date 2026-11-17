@@ -100,10 +100,13 @@ class TileRendererTerrainTest {
         water[1] = 1;
         materials[1] = "SAND";
         biomes[1] = "RIVER";
-        for (int x = 3; x <= 5; x++) {
-            water[x] = 1;
-            materials[x] = "SAND";
-            biomes[x] = "RIVER";
+        for (int z = 0; z <= 2; z++) {
+            for (int x = 3; x <= 5; x++) {
+                int index = z * 16 + x;
+                water[index] = 1;
+                materials[index] = "SAND";
+                biomes[index] = "RIVER";
+            }
         }
 
         ChunkSnapshot snapshot = new ChunkSnapshot(worldId, "world", 0, 0, -64,
@@ -121,7 +124,7 @@ class TileRendererTerrainTest {
 
             Color bank = new Color(rendered.getRGB(0, 0));
             Color shallowWater = new Color(rendered.getRGB(1, 0));
-            Color interiorWater = new Color(rendered.getRGB(4, 0));
+            Color interiorWater = new Color(rendered.getRGB(4, 1));
             assertTrue(bank.getRed() > 126, "the bank edge should receive a restrained warm tint");
             assertTrue(shallowWater.getBlue() > interiorWater.getBlue(),
                     "shallow water at the shore should be more turquoise than interior water");
