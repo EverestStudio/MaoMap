@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
@@ -30,6 +31,7 @@ public final class WebMapServer {
     private final AtomicReference<String> worldsJson = new AtomicReference<>("[]");
     private final AtomicReference<String> playersJson = new AtomicReference<>("[]");
     private HttpServer server;
+    private ExecutorService executor;
 
     public WebMapServer(JavaPlugin plugin, Path output, MarkerStore markers) {
         this.plugin = plugin;
@@ -41,11 +43,12 @@ public final class WebMapServer {
         refreshSnapshot();
         Bukkit.getScheduler().runTaskTimer(plugin, this::refreshSnapshot, 20L, 40L);
         server = HttpServer.create(new InetSocketAddress(host, port), 32);
-        server.setExecutor(Executors.newFixedThreadPool(4, task -> {
+        executor = Executors.newFixedThreadPool(4, task -> {
             Thread thread = new Thread(task, "MaoMap-Web");
             thread.setDaemon(true);
             return thread;
-        }));
+        });
+        server.setExecutor(executor);
         server.createContext("/", this::handle);
         server.start();
         plugin.getLogger().info("MaoMap web map listening on http://" + host + ":" + port);
@@ -63,8 +66,10 @@ public final class WebMapServer {
             } catch (IOException ignored) { continue; }
             if (!first) worldJson.append(',');
             first = false;
-            worldJson.append("{\"id\":\"").append(world.getUID()).append("\",\"name\":\"")
-                    .append(json(world.getName())).append("\"}");
+            var spawn = world.getSpawnLocation();
+            worldJson.append("{\\"id\\":\\"").append(world.getUID()).append("\\",\\"name\\":\\"")
+                    .append(json(world.getName())).append("\\",\\"spawnX\\":").append(spawn.getBlockX())
+                    .append(",\\"spawnZ\\":").append(spawn.getBlockZ()).append('}');
         }
         worldJson.append(']');
         worldsJson.set(worldJson.toString());
@@ -206,5 +211,6 @@ public final class WebMapServer {
 
     public void stop() {
         if (server != null) server.stop(1);
+        if (executor != null) executor.shutdownNow();
     }
 }
