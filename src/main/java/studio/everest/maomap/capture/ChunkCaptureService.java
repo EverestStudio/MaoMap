@@ -1,8 +1,10 @@
 package studio.everest.maomap.capture;
 
 import org.bukkit.Chunk;
+import org.bukkit.HeightMap;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -33,8 +35,6 @@ public final class ChunkCaptureService implements Listener {
         this.renderer = renderer;
         this.maxQueue = Math.max(1, plugin.getConfig().getInt("capture.max-queue-size", 256));
         this.chunksPerTick = Math.max(1, plugin.getConfig().getInt("capture.chunks-per-tick", 1));
-        // Snapshot only chunks that are already loaded. Never call getChunkAt to discover
-        // terrain during startup: this list contains coordinates, not live Chunk objects.
         for (World world : plugin.getServer().getWorlds()) {
             for (Chunk chunk : world.getLoadedChunks()) {
                 startupScan.add(new ChunkKey(world.getUID(), chunk.getX(), chunk.getZ()));
@@ -44,14 +44,10 @@ public final class ChunkCaptureService implements Listener {
                 + " already-loaded chunks for gradual initial capture.");
     }
 
-    @EventHandler public void onChunkLoad(ChunkLoadEvent event) {
-        enqueue(event.getChunk());
-    }
-
+    @EventHandler public void onChunkLoad(ChunkLoadEvent event) { enqueue(event.getChunk()); }
     @EventHandler(ignoreCancelled = true) public void onBlockPlace(BlockPlaceEvent event) {
         enqueue(event.getBlock().getChunk());
     }
-
     @EventHandler(ignoreCancelled = true) public void onBlockBreak(BlockBreakEvent event) {
         enqueue(event.getBlock().getChunk());
     }
@@ -66,7 +62,6 @@ public final class ChunkCaptureService implements Listener {
     /** Must be called on the server thread. */
     public void processCaptureQueue() {
         if (stopped) return;
-        // Feed the bounded work queue from the startup snapshot as capacity becomes available.
         while (startupScanIndex < startupScan.size() && pending.size() < maxQueue) {
             ChunkKey key = startupScan.get(startupScanIndex++);
             pending.add(key);
@@ -82,9 +77,7 @@ public final class ChunkCaptureService implements Listener {
             World world = plugin.getServer().getWorld(key.worldId());
             if (world == null || !world.isChunkLoaded(key.x(), key.z())) continue;
             Chunk chunk = world.getChunkAt(key.x(), key.z());
-            ChunkSnapshot snapshot = snapshot(chunk);
-            if (!renderer.renderAsync(snapshot)) {
-                // Keep the request for a later tick instead of running rendering on the server thread.
+            if (!renderer.renderAsync(snapshot(chunk))) {
                 pending.add(key);
                 break;
             }
@@ -93,23 +86,52 @@ public final class ChunkCaptureService implements Listener {
 
     private ChunkSnapshot snapshot(Chunk chunk) {
         World world = chunk.getWorld();
-        int[] heights = new int[256];
-        String[] materials = new String[256];
+        int[] groundHeights = new int[256];
+        String[] groundMaterials = new String[256];
+        int[] canopyHeights = new int[256];
+        String[] canopyMaterials = new String[256];
+        int[] waterDepths = new int[256];
         String[] biomes = new String[256];
         int minHeight = world.getMinHeight();
+        int maxHeight = world.getMaxHeight();
+
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
                 int index = z * 16 + x;
                 int blockX = chunk.getX() * 16 + x;
                 int blockZ = chunk.getZ() * 16 + z;
-                int y = world.getHighestBlockYAt(blockX, blockZ);
-                Material material = world.getBlockAt(blockX, y, blockZ).getType();
-                heights[index] = y;
-                materials[index] = material.name();
-                biomes[index] = world.getBiome(blockX, y, blockZ).name();
+
+                int groundY = world.getHighestBlockYAt(blockX, blockZ, HeightMap.MOTION_BLOCKING_NO_LEAVES);
+                Block ground = world.getBlockAt(blockX, groundY, blockZ);
+                groundHeights[index] = groundY;
+                groundMaterials[index] = ground.getType().name();
+                biomes[index] = world.getBiome(blockX, groundY, blockZ).name();
+
+                int topY = world.getHighestBlockYAt(blockX, blockZ, HeightMap.WORLD_SURFACE);
+                Block top = world.getBlockAt(blockX, topY, blockZ);
+                Material topType = top.getType();
+                if (topY > groundY && (topType.name().contains("LEAVES")
+                        || topType.name().contains("LOG") || topType.name().contains("WOOD"))) {
+                    canopyHeights[index] = topY;
+                    canopyMaterials[index] = topType.name();
+                } else {
+                    canopyHeights[index] = minHeight;
+                    canopyMaterials[index] = "";
+                }
+
+                // Count a contiguous water column immediately above the terrain floor.
+                int depth = 0;
+                for (int y = groundY + 1; y < maxHeight; y++) {
+                    Material type = world.getBlockAt(blockX, y, blockZ).getType();
+                    if (type == Material.WATER) depth++;
+                    else break;
+                }
+                waterDepths[index] = depth;
             }
         }
-        return new ChunkSnapshot(world.getUID(), world.getName(), chunk.getX(), chunk.getZ(), minHeight, heights, materials, biomes);
+        return new ChunkSnapshot(world.getUID(), world.getName(), chunk.getX(), chunk.getZ(),
+                minHeight, groundHeights, groundMaterials, canopyHeights, canopyMaterials,
+                waterDepths, biomes);
     }
 
     public int pendingCount() { return pending.size() + (startupScan.size() - startupScanIndex); }
