@@ -150,6 +150,7 @@ public final class TileRenderer {
         int[] heights = new int[TILE_SIZE * TILE_SIZE];
         int[] colors = new int[TILE_SIZE * TILE_SIZE];
         int[] canopyHeights = new int[TILE_SIZE * TILE_SIZE];
+        int[] canopyColors = new int[TILE_SIZE * TILE_SIZE];
         int[] waterDepths = new int[TILE_SIZE * TILE_SIZE];
         boolean[] present = new boolean[TILE_SIZE * TILE_SIZE];
 
@@ -161,7 +162,7 @@ public final class TileRenderer {
                         .resolve(chunkX + "_" + chunkZ + ".mcs");
                 if (!Files.isRegularFile(dataFile)) continue;
                 readChunkIntoTile(dataFile, localChunkX * 16, localChunkZ * 16,
-                        heights, colors, canopyHeights, waterDepths, present);
+                        heights, colors, canopyHeights, canopyColors, waterDepths, present);
             }
         }
 
@@ -178,11 +179,20 @@ public final class TileRenderer {
                 int shade = (int) Math.round(Math.max(-48, Math.min(48, slope * 1.25)));
                 Color base = new Color(colors[index], true);
                 if (waterDepths[index] > 0) {
-                    int depth = Math.min(40, waterDepths[index]);
-                    base = blend(base, new Color(35, 91, 145), Math.min(0.62, 0.18 + depth / 80.0));
-                } else if (canopyHeights[index] > heights[index]) {
+                    // Shallow water stays bright and transparent-looking; deep oceans become darker.
+                    int depth = Math.min(48, waterDepths[index]);
+                    Color water = depth <= 3 ? new Color(91, 169, 177) : new Color(31, 78, 132);
+                    double amount = depth <= 3 ? 0.48 + depth * 0.035
+                            : Math.min(0.82, 0.58 + depth / 180.0);
+                    base = blend(base, water, amount);
+                } else if (canopyHeights[index] > heights[index] && canopyColors[index] != 0) {
                     int canopyRise = canopyHeights[index] - heights[index];
-                    base = blend(base, new Color(42, 105, 55), Math.min(0.88, 0.48 + canopyRise / 32.0));
+                    Color canopy = new Color(canopyColors[index], true);
+                    base = blend(base, canopy, Math.min(0.9, 0.68 + canopyRise / 64.0));
+                }
+                // A narrow warm shoreline makes the boundary between land and water readable.
+                if (waterDepths[index] == 0 && touchesWater(waterDepths, x, z)) {
+                    base = blend(base, new Color(207, 190, 137), 0.42);
                 }
                 image.setRGB(x, z, new Color(clamp(base.getRed() + shade),
                         clamp(base.getGreen() + shade), clamp(base.getBlue() + shade)).getRGB());
@@ -198,8 +208,8 @@ public final class TileRenderer {
     }
 
     private void readChunkIntoTile(Path file, int offsetX, int offsetZ, int[] heights,
-                                   int[] colors, int[] canopyHeights, int[] waterDepths,
-                                   boolean[] present) throws IOException {
+                                   int[] colors, int[] canopyHeights, int[] canopyColors,
+                                   int[] waterDepths, boolean[] present) throws IOException {
         try (DataInputStream in = new DataInputStream(Files.newInputStream(file))) {
             if (in.readInt() != DATA_MAGIC) throw new IOException("Invalid chunk data header: " + file);
             int version = in.readInt();
@@ -220,12 +230,39 @@ public final class TileRenderer {
                     String biome = version >= 2 ? in.readUTF() : "PLAINS";
                     heights[target] = height;
                     canopyHeights[target] = canopyHeight;
+                    canopyColors[target] = canopyMaterial.isBlank() ? 0 : canopyColorFor(canopyMaterial, biome).getRGB();
                     waterDepths[target] = waterDepth;
                     colors[target] = colorFor(material, biome).getRGB();
                     present[target] = true;
                 }
             }
         }
+    }
+
+    private boolean touchesWater(int[] waterDepths, int x, int z) {
+        return isWaterAt(waterDepths, x - 1, z) || isWaterAt(waterDepths, x + 1, z)
+                || isWaterAt(waterDepths, x, z - 1) || isWaterAt(waterDepths, x, z + 1);
+    }
+
+    private boolean isWaterAt(int[] waterDepths, int x, int z) {
+        return x >= 0 && x < TILE_SIZE && z >= 0 && z < TILE_SIZE
+                && waterDepths[z * TILE_SIZE + x] > 0;
+    }
+
+    private Color canopyColorFor(String materialName, String biomeName) {
+        String material = materialName.toUpperCase(Locale.ROOT);
+        String biome = biomeName.toUpperCase(Locale.ROOT);
+        if (material.contains("CHERRY") || biome.contains("CHERRY")) return new Color(183, 132, 151);
+        if (material.contains("BIRCH")) return new Color(143, 178, 103);
+        if (material.contains("SPRUCE") || material.contains("PINE")) return new Color(48, 101, 75);
+        if (material.contains("MANGROVE")) return new Color(66, 119, 73);
+        if (material.contains("JUNGLE")) return new Color(48, 126, 57);
+        if (material.contains("ACACIA")) return new Color(125, 151, 75);
+        if (material.contains("DARK_OAK")) return new Color(48, 91, 54);
+        if (biome.contains("SNOW") || biome.contains("FROZEN") || biome.contains("GROVE")) {
+            return new Color(66, 112, 91);
+        }
+        return new Color(55, 119, 62);
     }
 
     private int heightAt(int[] heights, boolean[] present, int x, int z, int fallback) {
