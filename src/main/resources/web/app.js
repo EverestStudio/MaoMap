@@ -1,3 +1,11 @@
+window.addEventListener('error', event => {
+ const panel=document.getElementById('runtime-error');
+ if(panel){panel.hidden=false;panel.textContent='Ошибка JavaScript: '+(event.message||'неизвестная ошибка');}
+});
+window.addEventListener('unhandledrejection', event => {
+ const panel=document.getElementById('runtime-error');
+ if(panel){panel.hidden=false;panel.textContent='Ошибка запроса карты: '+String(event.reason||'неизвестная ошибка');}
+});
 const viewport=document.getElementById('viewport'),map=document.getElementById('map'),worldSelect=document.getElementById('world-select'),playerSearch=document.getElementById('player-search');
 let scale=1,offsetX=0,offsetZ=0,drag=null,activeWorld=null,tiles=new Set();
 function paint(){map.style.transform=`translate(${offsetX}px,${offsetZ}px) scale(${scale})`;}
@@ -40,8 +48,10 @@ function zoomAt(factor,anchorX=viewport.clientWidth/2,anchorY=viewport.clientHei
  if(zoomLevel)zoomLevel.textContent=Math.round(scale*100)+'%';
 }
 function zoom(factor){zoomAt(factor)}
-document.getElementById('zoom-in').onclick=()=>zoom(1.25);
-document.getElementById('zoom-out').onclick=()=>zoom(1/1.25);
+const zoomInButton=document.getElementById('zoom-in');
+const zoomOutButton=document.getElementById('zoom-out');
+if(zoomInButton)zoomInButton.addEventListener('click',event=>{event.stopPropagation();zoom(1.25)});
+if(zoomOutButton)zoomOutButton.addEventListener('click',event=>{event.stopPropagation();zoom(1/1.25)});
 if(zoomLevel){zoomLevel.textContent='100%';zoomLevel.title='Сбросить масштаб';zoomLevel.onclick=()=>{scale=1;paint();zoomLevel.textContent='100%'}}
 viewport.addEventListener('wheel',e=>{
  e.preventDefault();
