@@ -1,0 +1,24 @@
+# MaoMap performance settings
+capture:
+  # Maximum number of chunk snapshots started per server tick.
+  chunks-per-tick: 1
+  # Maximum number of pending chunk snapshots. New requests are coalesced by chunk.
+  max-queue-size: 256
+  # Never force-load chunks for map capture.
+  loaded-chunks-only: true
+
+render:
+  # Number of background image-rendering workers.
+  worker-threads: 2
+  # Maximum number of render tasks waiting behind active workers.
+  queue-capacity: 128
+  # Output tile dimensions in pixels. One tile contains 16x16 chunks.
+  tile-size: 256
+  # Root folder for persistent chunk snapshots and generated tiles.
+  output-directory: tiles
+
+web:
+  # Bind to 127.0.0.1 for local access only; use 0.0.0.0 to expose it externally.
+  enabled: true
+  host: 127.0.0.1
+  port: 8123
